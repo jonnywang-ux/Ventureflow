@@ -4,6 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Venture Flow — AI Business Intelligence</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=Instrument+Serif:ital@0;1&family=Geist+Mono:wght@300;400;500&display=swap" rel="stylesheet">
 <style>
 :root {
@@ -966,6 +968,9 @@ select option { background: var(--surface); }
   <button class="nav-tab" onclick="showPage('notes')" id="tab-notes">
     <span class="tab-icon">✎</span> Notes
   </button>
+   <button class="nav-tab" onclick="showPage('import')" id="tab-import">
+    <span class="tab-icon">📂</span> Import Docs
+  </button>
   <div class="nav-right">
     <button class="btn" onclick="openGlobalSearch()" id="global-search-btn" style="background:rgba(255,255,255,0.08);color:rgba(255,255,255,0.75);border:1px solid rgba(255,255,255,0.15);font-size:10px;padding:6px 14px;gap:6px;letter-spacing:0.2px" title="Global search (Ctrl+K)">
       ⌕ Search
@@ -1256,7 +1261,130 @@ select option { background: var(--surface); }
 
   <div id="notes-list" style="display:grid;grid-template-columns:1fr 1fr;gap:16px"></div>
 </div>
+<!-- IMPORT DOCS PAGE -->
+<div class="page" id="page-import">
+  <div class="page-header">
+    <div>
+      <div class="page-title">Document <em>Import</em></div>
+      <div class="page-sub">Upload any document — AI will extract, analyse and save insights to your workspace</div>
+    </div>
+  </div>
 
+  <!-- Drop Zone -->
+  <div id="import-dropzone"
+    style="border:2px dashed var(--border);border-radius:14px;padding:52px 32px;text-align:center;cursor:pointer;transition:all 0.25s;margin-bottom:24px;background:var(--surface);position:relative"
+    onclick="document.getElementById('import-file-input').click()"
+    ondragover="importDragOver(event)" ondragleave="importDragLeave()" ondrop="importDrop(event)">
+    <div style="font-size:44px;margin-bottom:14px;line-height:1">📂</div>
+    <div style="font-family:'Syne',sans-serif;font-weight:700;font-size:16px;color:var(--ink);margin-bottom:8px">Drop your document here</div>
+    <div style="font-size:12px;color:var(--ink3);line-height:1.7">
+      PDF &nbsp;·&nbsp; Word (.docx) &nbsp;·&nbsp; Excel (.xlsx) &nbsp;·&nbsp; CSV &nbsp;·&nbsp; Images (PNG/JPG) &nbsp;·&nbsp; Markdown (.md)<br>
+      AI will read, extract key insights and let you save them directly to your workspace
+    </div>
+    <div style="margin-top:20px">
+      <span class="btn btn-primary" style="pointer-events:none;display:inline-flex">Browse Files</span>
+    </div>
+  </div>
+  <input type="file" id="import-file-input" accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,.png,.jpg,.jpeg,.md,.txt" style="display:none" onchange="handleImportFile(event)">
+
+  <!-- Processing Status -->
+  <div id="import-status-card" style="display:none;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:20px 24px;margin-bottom:20px;box-shadow:var(--shadow)">
+    <div style="display:flex;align-items:center;gap:14px">
+      <div id="import-spinner" style="width:28px;height:28px;border:3px solid var(--border);border-top-color:var(--idea);border-radius:50%;animation:spin 0.8s linear infinite;flex-shrink:0"></div>
+      <div style="flex:1">
+        <div style="font-family:'Syne',sans-serif;font-weight:600;font-size:13px;color:var(--ink)" id="import-status-title">Reading document…</div>
+        <div style="font-size:11px;color:var(--ink3);margin-top:3px" id="import-status-sub">Extracting content with AI</div>
+      </div>
+      <div style="font-size:11px;color:var(--ink4)" id="import-file-label"></div>
+    </div>
+  </div>
+
+  <!-- AI Analysis Result -->
+  <div id="import-result-card" style="display:none">
+    <div class="section-label">AI Analysis Result</div>
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow);overflow:hidden;margin-bottom:20px">
+
+      <!-- Result header -->
+      <div style="padding:20px 24px;border-bottom:1px solid var(--border);display:flex;align-items:flex-start;gap:14px">
+        <div id="import-result-icon" style="font-size:30px;flex-shrink:0;margin-top:2px">📄</div>
+        <div style="flex:1;min-width:0">
+          <div style="font-family:'Instrument Serif',serif;font-size:21px;color:var(--ink);line-height:1.2" id="import-result-title">Document Title</div>
+          <div style="font-size:11px;color:var(--ink3);margin-top:5px;letter-spacing:0.2px" id="import-result-meta"></div>
+        </div>
+        <button class="btn btn-ghost btn-sm" onclick="clearImport()" style="flex-shrink:0">✕ Clear</button>
+      </div>
+
+      <!-- Summary -->
+      <div style="padding:20px 24px;border-bottom:1px solid var(--border)">
+        <div style="font-family:'Syne',sans-serif;font-weight:600;font-size:11px;letter-spacing:0.5px;text-transform:uppercase;color:var(--ink3);margin-bottom:10px">AI Summary</div>
+        <div style="font-size:13px;color:var(--ink2);line-height:1.75" id="import-result-summary"></div>
+      </div>
+
+      <!-- Key Insights -->
+      <div style="padding:20px 24px;border-bottom:1px solid var(--border)">
+        <div style="font-family:'Syne',sans-serif;font-weight:600;font-size:11px;letter-spacing:0.5px;text-transform:uppercase;color:var(--ink3);margin-bottom:12px">Extracted Insights</div>
+        <div id="import-result-insights" style="display:flex;flex-direction:column;gap:8px"></div>
+      </div>
+
+      <!-- Contacts / Ideas / Actions found -->
+      <div id="import-entities-row" style="display:none;padding:16px 24px;border-bottom:1px solid var(--border);display:flex;gap:20px;flex-wrap:wrap">
+        <div id="import-found-contacts" style="display:none">
+          <div style="font-family:'Syne',sans-serif;font-weight:600;font-size:10px;letter-spacing:0.5px;text-transform:uppercase;color:var(--ink3);margin-bottom:6px">People Found</div>
+          <div id="import-contacts-list" style="display:flex;flex-direction:column;gap:4px"></div>
+        </div>
+        <div id="import-found-ideas" style="display:none">
+          <div style="font-family:'Syne',sans-serif;font-weight:600;font-size:10px;letter-spacing:0.5px;text-transform:uppercase;color:var(--ink3);margin-bottom:6px">Ideas Found</div>
+          <div id="import-ideas-list" style="display:flex;flex-direction:column;gap:4px"></div>
+        </div>
+        <div id="import-found-actions" style="display:none">
+          <div style="font-family:'Syne',sans-serif;font-weight:600;font-size:10px;letter-spacing:0.5px;text-transform:uppercase;color:var(--ink3);margin-bottom:6px">Actions Found</div>
+          <div id="import-actions-list" style="display:flex;flex-direction:column;gap:4px"></div>
+        </div>
+      </div>
+
+      <!-- Keywords -->
+      <div id="import-keywords-row" style="padding:12px 24px;border-bottom:1px solid var(--border);display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+        <span style="font-size:10px;color:var(--ink4);letter-spacing:0.3px;text-transform:uppercase;margin-right:4px">Keywords</span>
+        <div id="import-keywords"></div>
+      </div>
+
+      <!-- Save Buttons -->
+      <div style="padding:16px 24px;background:var(--surface2);display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+        <span style="font-family:'Syne',sans-serif;font-weight:600;font-size:11px;letter-spacing:0.5px;text-transform:uppercase;color:var(--ink3);margin-right:2px">Save as →</span>
+        <button class="btn btn-ghost btn-sm" onclick="saveImportAsNote()">✎ Note</button>
+        <button class="btn btn-ghost btn-sm" onclick="saveImportAsContact()">👤 Contact(s)</button>
+        <button class="btn btn-ghost btn-sm" onclick="saveImportAsIdea()">💡 Idea(s)</button>
+        <button class="btn btn-ghost btn-sm" onclick="saveImportAsAction()">▷ Action(s)</button>
+        <button class="btn btn-primary btn-sm" onclick="saveAllImportInsights()" style="margin-left:auto">★ Save All as Notes</button>
+      </div>
+    </div>
+
+    <!-- Raw text toggle -->
+    <div style="margin-bottom:28px">
+      <button onclick="toggleRawText()" style="background:none;border:none;cursor:pointer;font-family:'Geist Mono',monospace;font-size:11px;color:var(--ink3);display:flex;align-items:center;gap:6px;padding:4px 0;transition:color 0.15s" id="raw-toggle-btn" onmouseover="this.style.color='var(--ink)'" onmouseout="this.style.color='var(--ink3)'">
+        ▶ Show extracted raw text
+      </button>
+      <div id="import-raw-text" style="display:none;margin-top:10px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:16px;max-height:300px;overflow-y:auto">
+        <pre style="font-size:11px;color:var(--ink3);line-height:1.6;white-space:pre-wrap;word-break:break-word;margin:0" id="import-raw-content"></pre>
+      </div>
+    </div>
+  </div>
+
+  <!-- Import History -->
+  <div id="import-history-section" style="display:none">
+    <div class="section-label">Recent Imports</div>
+    <div id="import-history-list" style="display:flex;flex-direction:column;gap:8px"></div>
+  </div>
+</div>
+
+<style>
+@keyframes spin { to { transform: rotate(360deg); } }
+#import-dropzone.drag-over {
+  border-color: var(--idea);
+  background: var(--idea-dim);
+  transform: scale(1.01);
+}
+</style>  
 <!-- MODALS -->
 <!-- Contact Modal -->
 <div class="modal-overlay" id="modal-contact">
@@ -1493,6 +1621,7 @@ function showPage(name) {
   if (name==='actions') renderActions();
   if (name==='synthesis') renderSynthesis();
   if (name==='notes') { populateNoteLinkedDropdown(); renderNotes(); }
+  if (name==='import') { renderImportPage(); }
 }
 
 function setMember(m, el) {
@@ -2146,7 +2275,435 @@ function relTime(ts) {
   if (h<24) return h+'h ago';
   return Math.floor(h/24)+'d ago';
 }
+// ============================================================
+// PASTE THIS BLOCK right before "// ─── AI INGESTION" in index.html
+// ============================================================
 
+// ─── DOCUMENT IMPORT ─────────────────────────────────────────────
+let importResult = null;
+let importHistory = [];
+
+function renderImportPage() {
+  try {
+    const saved = localStorage.getItem('vf-import-history');
+    if (saved) importHistory = JSON.parse(saved);
+  } catch(e) {}
+  renderImportHistory();
+}
+
+function importDragOver(e) {
+  e.preventDefault();
+  document.getElementById('import-dropzone').classList.add('drag-over');
+}
+function importDragLeave() {
+  document.getElementById('import-dropzone').classList.remove('drag-over');
+}
+function importDrop(e) {
+  e.preventDefault();
+  importDragLeave();
+  const file = e.dataTransfer?.files?.[0];
+  if (file) processImportFile(file);
+}
+function handleImportFile(e) {
+  const file = e.target.files?.[0];
+  if (file) processImportFile(file);
+  e.target.value = '';
+}
+
+function showImportStatus(title, sub) {
+  document.getElementById('import-status-card').style.display = 'block';
+  document.getElementById('import-result-card').style.display = 'none';
+  document.getElementById('import-status-title').textContent = title;
+  document.getElementById('import-status-sub').textContent = sub;
+}
+
+function hideImportStatus() {
+  document.getElementById('import-status-card').style.display = 'none';
+}
+
+function formatBytes(bytes) {
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+  return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+}
+
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = e => resolve(e.target.result.split(',')[1]);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+function readAsText(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = e => resolve(e.target.result);
+    reader.onerror = reject;
+    reader.readAsText(file);
+  });
+}
+
+async function extractDocx(file) {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      try {
+        if (window.mammoth) {
+          const result = await window.mammoth.extractRawText({ arrayBuffer: e.target.result });
+          resolve(result.value || '[DOCX — empty content]');
+        } else {
+          resolve('[DOCX file — mammoth.js not loaded, content will be analysed by AI from filename/metadata]');
+        }
+      } catch(err) {
+        resolve('[DOCX file — extraction error: ' + err.message + ']');
+      }
+    };
+    reader.onerror = () => resolve('[DOCX file — read error]');
+    reader.readAsArrayBuffer(file);
+  });
+}
+
+async function extractXlsx(file) {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        if (window.XLSX) {
+          const wb = window.XLSX.read(e.target.result, { type: 'array' });
+          let text = '';
+          wb.SheetNames.forEach(name => {
+            const ws = wb.Sheets[name];
+            text += '## Sheet: ' + name + '\n';
+            text += window.XLSX.utils.sheet_to_csv(ws) + '\n\n';
+          });
+          resolve(text.slice(0, 10000));
+        } else {
+          resolve('[Excel file — XLSX.js not loaded]');
+        }
+      } catch(err) {
+        resolve('[Excel file — extraction error: ' + err.message + ']');
+      }
+    };
+    reader.onerror = () => resolve('[Excel file — read error]');
+    reader.readAsArrayBuffer(file);
+  });
+}
+
+async function processImportFile(file) {
+  const ext = file.name.split('.').pop().toLowerCase();
+  document.getElementById('import-file-label').textContent = file.name + ' (' + formatBytes(file.size) + ')';
+  showImportStatus('Reading document…', 'Preparing ' + file.name);
+
+  try {
+    let extractedText = '';
+    let fileType = 'document';
+
+    // IMAGE files — send as vision
+    if (['png', 'jpg', 'jpeg', 'gif', 'webp'].includes(ext)) {
+      fileType = 'image';
+      const base64 = await fileToBase64(file);
+      showImportStatus('Analysing image with AI…', 'Extracting text and insights from image');
+      await runImportAI(null, base64, file.type, file.name, fileType);
+      return;
+    }
+
+    // PDF — send as document
+    if (ext === 'pdf') {
+      fileType = 'pdf';
+      const base64 = await fileToBase64(file);
+      showImportStatus('Reading PDF with AI…', 'Extracting content from PDF');
+      await runImportAI(null, base64, 'application/pdf', file.name, fileType);
+      return;
+    }
+
+    // DOCX
+    if (['docx', 'doc'].includes(ext)) {
+      fileType = 'word';
+      showImportStatus('Extracting Word document…', 'Reading DOCX content');
+      extractedText = await extractDocx(file);
+    }
+    // XLSX
+    else if (['xlsx', 'xls'].includes(ext)) {
+      fileType = 'excel';
+      showImportStatus('Extracting Excel data…', 'Parsing spreadsheet sheets');
+      extractedText = await extractXlsx(file);
+    }
+    // CSV
+    else if (ext === 'csv') {
+      fileType = 'csv';
+      const raw = await readAsText(file);
+      extractedText = raw.split('\n').slice(0, 300).join('\n');
+    }
+    // MD / TXT
+    else if (['md', 'txt'].includes(ext)) {
+      fileType = ext === 'md' ? 'markdown' : 'text';
+      extractedText = await readAsText(file);
+    }
+    // Fallback
+    else {
+      extractedText = await readAsText(file).catch(() => '');
+      if (!extractedText) {
+        hideImportStatus();
+        showToast('⚠ Unsupported file type: .' + ext);
+        return;
+      }
+    }
+
+    showImportStatus('Analysing with AI…', 'Generating insights, contacts, and action items');
+    await runImportAI(extractedText, null, null, file.name, fileType);
+
+  } catch(err) {
+    document.getElementById('import-status-title').textContent = '⚠ Error processing file';
+    document.getElementById('import-status-sub').textContent = err.message || 'Please try again';
+    console.error('Import error:', err);
+  }
+}
+
+async function runImportAI(textContent, base64Data, mimeType, fileName, fileType) {
+  const systemPrompt = `You are an AI analyst for VentureFlow, a venture intelligence tool for a 3-person team researching AI businesses in China and USA.
+
+Analyse the provided document and return ONLY a valid JSON object with EXACTLY this structure (no extra keys, no markdown fences):
+{
+  "title": "concise document title (max 80 chars)",
+  "type": "insight",
+  "summary": "2-3 sentence executive summary of key content",
+  "insights": [
+    {"text": "key insight, fact, or finding", "type": "insight"},
+    {"text": "another key point", "type": "risk"}
+  ],
+  "contacts": [
+    {"name": "Full Name", "org": "Company", "role": "Title"}
+  ],
+  "ideas": [
+    {"title": "Business idea title", "desc": "Brief description"}
+  ],
+  "actions": [
+    {"title": "Action to take", "desc": "Details of what needs to happen"}
+  ],
+  "keywords": ["keyword1", "keyword2", "keyword3"],
+  "region": "china"
+}
+
+Rules:
+- Extract 4-8 insights. Types must be one of: insight, risk, opportunity, action, data
+- contacts: only include named real people found in the document (can be empty array)
+- ideas: only if document implies business opportunities (can be empty array)
+- actions: only if document implies things to do (can be empty array)
+- keywords: 3-6 relevant keywords
+- region: must be one of: china, usa, both, unknown
+- Return ONLY the JSON object. Absolutely no other text, no explanation, no markdown.`;
+
+  try {
+    let messages;
+
+    if (base64Data && mimeType) {
+      // Vision / PDF mode
+      if (mimeType === 'application/pdf') {
+        messages = [{
+          role: 'user',
+          content: [
+            { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: base64Data } },
+            { type: 'text', text: 'Analyse this PDF file named "' + fileName + '" and extract all key information according to the JSON schema.' }
+          ]
+        }];
+      } else {
+        messages = [{
+          role: 'user',
+          content: [
+            { type: 'image', source: { type: 'base64', media_type: mimeType, data: base64Data } },
+            { type: 'text', text: 'Analyse this image file named "' + fileName + '". Extract any text, data, contacts, or insights visible. Return JSON as specified.' }
+          ]
+        }];
+      }
+    } else {
+      // Text mode
+      const truncated = (textContent || '').slice(0, 14000);
+      messages = [{
+        role: 'user',
+        content: 'Analyse this ' + fileType + ' file named "' + fileName + '":\n\n' + truncated
+      }];
+    }
+
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 1000,
+        system: systemPrompt,
+        messages
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error('API error: ' + response.status);
+    }
+
+    const result = await response.json();
+    const rawText = result.content?.[0]?.text || '{}';
+    const clean = rawText.replace(/```json|```/g, '').trim();
+
+    let parsed;
+    try {
+      parsed = JSON.parse(clean);
+    } catch(parseErr) {
+      const match = clean.match(/\{[\s\S]*\}/);
+      if (match) parsed = JSON.parse(match[0]);
+      else throw new Error('Could not parse AI response as JSON');
+    }
+
+    importResult = {
+      ...parsed,
+      fileName,
+      fileType,
+      rawText: textContent || '[binary/image file]',
+      ts: new Date().toISOString()
+    };
+
+    hideImportStatus();
+    renderImportResult(importResult);
+
+    // Save to history (without full raw text to save space)
+    const historyItem = { ...importResult, rawText: (importResult.rawText || '').slice(0, 600) };
+    importHistory.unshift(historyItem);
+    if (importHistory.length > 25) importHistory = importHistory.slice(0, 25);
+    localStorage.setItem('vf-import-history', JSON.stringify(importHistory));
+    renderImportHistory();
+
+  } catch(err) {
+    document.getElementById('import-status-title').textContent = '⚠ AI analysis failed';
+    document.getElementById('import-status-sub').textContent = err.message || 'Unknown error';
+    console.error('Import AI error:', err);
+  }
+}
+
+function renderImportResult(r) {
+  const typeIcon = { pdf:'📕', word:'📘', excel:'📗', csv:'📊', image:'🖼', markdown:'📝', text:'📄', document:'📄' };
+  const typeColors = { insight:'var(--idea)', risk:'var(--china)', opportunity:'var(--gold)', action:'var(--action)', data:'var(--usa)' };
+  const typeEmoji = { insight:'💡', risk:'⚠', opportunity:'🌟', action:'▷', data:'📊' };
+  const regionLabel = { china:'🇨🇳 China', usa:'🇺🇸 USA', both:'🌐 Both', unknown:'🌍 Global' };
+
+  document.getElementById('import-result-icon').textContent = typeIcon[r.fileType] || '📄';
+  document.getElementById('import-result-title').textContent = r.title || r.fileName;
+  document.getElementById('import-result-meta').textContent =
+    [regionLabel[r.region] || '', r.fileType?.toUpperCase() || '', new Date(r.ts).toLocaleDateString('en-US', {month:'short',day:'numeric',year:'numeric'})].filter(Boolean).join('  ·  ');
+  document.getElementById('import-result-summary').textContent = r.summary || 'No summary generated.';
+
+  // Insights
+  const insightsEl = document.getElementById('import-result-insights');
+  if (r.insights && r.insights.length) {
+    insightsEl.innerHTML = r.insights.map(ins => `
+      <div style="display:flex;gap:10px;align-items:flex-start;padding:10px 14px;background:var(--surface2);border-radius:8px;border:1px solid var(--border)">
+        <span style="font-size:14px;flex-shrink:0;margin-top:1px">${typeEmoji[ins.type] || '◎'}</span>
+        <span style="font-size:12px;color:var(--ink2);line-height:1.6;flex:1">${esc(ins.text)}</span>
+        <span style="font-size:9px;padding:2px 8px;border-radius:4px;background:${typeColors[ins.type] || 'var(--border)'}22;color:${typeColors[ins.type] || 'var(--ink4)'};border:1px solid ${typeColors[ins.type] || 'var(--border)'}44;flex-shrink:0;align-self:flex-start;margin-top:2px;font-family:'Syne',sans-serif;font-weight:600;letter-spacing:0.3px;text-transform:uppercase">${ins.type}</span>
+      </div>`).join('');
+  } else {
+    insightsEl.innerHTML = '<div style="font-size:12px;color:var(--ink4);font-style:italic">No insights extracted.</div>';
+  }
+
+  // Entities row
+  const entitiesRow = document.getElementById('import-entities-row');
+  const hasEntities = (r.contacts && r.contacts.length) || (r.ideas && r.ideas.length) || (r.actions && r.actions.length);
+  entitiesRow.style.display = hasEntities ? 'flex' : 'none';
+
+  const contactsDiv = document.getElementById('import-found-contacts');
+  const contactsList = document.getElementById('import-contacts-list');
+  if (r.contacts && r.contacts.length) {
+    contactsDiv.style.display = 'block';
+    contactsList.innerHTML = r.contacts.map(c => `<div style="font-size:11px;color:var(--ink2)">👤 <strong>${esc(c.name)}</strong>${c.org ? ' · '+esc(c.org) : ''}${c.role ? ' · '+esc(c.role) : ''}</div>`).join('');
+  } else { contactsDiv.style.display = 'none'; }
+
+  const ideasDiv = document.getElementById('import-found-ideas');
+  const ideasList = document.getElementById('import-ideas-list');
+  if (r.ideas && r.ideas.length) {
+    ideasDiv.style.display = 'block';
+    ideasList.innerHTML = r.ideas.map(i => `<div style="font-size:11px;color:var(--ink2)">💡 ${esc(i.title)}</div>`).join('');
+  } else { ideasDiv.style.display = 'none'; }
+
+  const actionsDiv = document.getElementById('import-found-actions');
+  const actionsList = document.getElementById('import-actions-list');
+  if (r.actions && r.actions.length) {
+    actionsDiv.style.display = 'block';
+    actionsList.innerHTML = r.actions.map(a => `<div style="font-size:11px;color:var(--ink2)">▷ ${esc(a.title)}</div>`).join('');
+  } else { actionsDiv.style.display = 'none'; }
+
+  // Keywords
+  const kw = document.getElementById('import-keywords');
+  kw.innerHTML = (r.keywords || []).map(k => `<span style="font-size:10px;padding:2px 9px;border-radius:12px;background:var(--surface2);border:1px solid var(--border);color:var(--ink3)">${esc(k)}</span>`).join('');
+
+  // Raw text
+  document.getElementById('import-raw-content').textContent = r.rawText || '';
+
+  // Show result
+  document.getElementById('import-result-card').style.display = 'block';
+  document.getElementById('import-result-card').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+function toggleRawText() {
+  const raw = document.getElementById('import-raw-text');
+  const btn = document.getElementById('raw-toggle-btn');
+  const isHidden = raw.style.display === 'none';
+  raw.style.display = isHidden ? 'block' : 'none';
+  btn.textContent = isHidden ? '▼ Hide extracted raw text' : '▶ Show extracted raw text';
+}
+
+function clearImport() {
+  importResult = null;
+  document.getElementById('import-result-card').style.display = 'none';
+  document.getElementById('import-status-card').style.display = 'none';
+  document.getElementById('import-file-label').textContent = '';
+  document.getElementById('import-raw-text').style.display = 'none';
+  document.getElementById('raw-toggle-btn').textContent = '▶ Show extracted raw text';
+}
+
+// ─── SAVE FUNCTIONS ────────────────────────────────────────────────
+
+function saveImportAsNote() {
+  if (!importResult) return;
+  const insightLines = (importResult.insights || []).map(i => '• [' + i.type + '] ' + i.text).join('\n');
+  const body = (importResult.summary || '') + (insightLines ? '\n\nKey insights:\n' + insightLines : '');
+  const typeMap = { insight:'insight', risk:'risk', opportunity:'opportunity', question:'question', general:'general' };
+  data.notes.push({
+    id: Date.now(),
+    title: importResult.title || importResult.fileName,
+    body,
+    type: typeMap[importResult.type] || 'insight',
+    linked: null,
+    by: currentMember,
+    pinned: false,
+    comments: [],
+    ts: new Date().toISOString()
+  });
+  save(); updateDashStats();
+  showToast('✓ Saved as note');
+}
+
+function saveImportAsContact() {
+  if (!importResult) return;
+  const contacts = (importResult.contacts || []).filter(c => c.name && c.name.trim());
+  if (!contacts.length) { showToast('⚠ No named people found in document'); return; }
+  let count = 0;
+  contacts.forEach((c, i) => {
+    data.contacts.push({
+      id: Date.now() + i,
+      name: c.name.trim(),
+      org: c.org || '',
+      role: c.role || '',
+      region: ['china','usa','both'].includes(importResult.region) ? importResult.region : 'both',
+      type: 'other',
+      warm: 'cold',
+      email: '',
+      by: currentMember,
+      notes: 'Imported from: ' + importResult.fileName,
+      comments: [],
+      ts: new Date().toISOString()
+    });
+    count++;
+  });
+  save(); updateDashStats(
 // ─── AI INGESTION ─────────────────────────────────────────────────
 let scanPendingContact = null;
 let scanPendingNote = null;
